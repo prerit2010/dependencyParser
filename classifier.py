@@ -12,9 +12,9 @@ test_data = parse(test_data)
 
 configurations = []
 operation_labels = []
-stack = [("root", -1, -1),]
+stack = []
 relations = []
-print(train_data[0][0])
+# print(train_data[0][0])
 
 def leftArc(s1, s2):
 
@@ -27,6 +27,7 @@ def leftArc(s1, s2):
     else
         return False
 
+
 def rightArc(s1, s2):
     
     m, n, p, q = s1[1], s1[2], s2[1], s2[2]
@@ -38,14 +39,18 @@ def rightArc(s1, s2):
     else
         return False
 
+
 for i, data in enumerate(train_data):
+    # initialize the stack with root
+    stack = [("root", -1, -1),]
+    # iterate over each word (acts as a buffer list)
     for j, word_data in enumerate(data):
         if j == 0:
             stack.append((word_data['form'], i, j))
         else:
-            while(1):
-                if len(stack) < 2:
-                    break
+            # iterate over the stack contents
+            while(len(stack) > 1):
+                # store top 2 elements of stack in s1 and s2
                 s1 = stack[-1]
                 s2 = stack[-2]
 
