@@ -17,14 +17,15 @@ test_data = open("data/test.conllu").read()
 train_data = re.sub(r" +", r"\t", train_data)
 test_data = re.sub(r" +", r"\t", test_data)
 
-# train_data = parse(test_data)
 train_data = parse(train_data)
+# train_data = train_data[:10000]
 test_data = parse(test_data)
 
 features = []
 operation_labels = []
 stack = []
 relations = []
+dep_relations_labels = []
 # print(test_data[2 ])
 
 def GloveVectors_Load(file_Glove):
@@ -65,7 +66,7 @@ def rightArc(s1, s2, index_i, index_j):
         # if the word is dependent of s1
         if word_data['head'] == s1['id']:
             # if its relation has not been processed with s1
-            if ((w1, w2) or (w2, w1)) not in relations:
+            if (w1, w2)  not in relations:
                 # cannot remove s1 from stack, return false.
                 return False
 
@@ -81,13 +82,11 @@ pos_tags = set()
 deprel = set()
 for data in train_data:
     for word_data in data:
-        # vocab.add(word_data['lemma'])
         pos_tags.add(word_data['xpostag'])
         deprel.add(word_data['deprel'])
 vocab.add("root")
 
-# vocab_train =  {voc:i  for i, voc in enumerate(vocab)}
-# pos_tags_train =  {tag:np.random.rand((5))  for i, tag in enumerate(pos_tags)}
+
 pos_tags_train =  {tag:i for i, tag in enumerate(pos_tags)}
 dep_rel_train =  {dep:i  for i, dep in enumerate(deprel)}
 # print(pos_tags)
@@ -111,9 +110,7 @@ for i, data in enumerate(train_data):
                 s1, s2 = stack[-1], stack[-2]
                 stack_vec = glove_vec.get(s1[0])
                 sig0_word = np.zeros((dimension)) if stack_vec is None else stack_vec
-                # print(sig0_word)
-                # print(s1[0])
-                # sig0_word = vocab_train[s1[0]]
+               
                 sig0_pos = pos_tags_train[train_data[s1[1]][s1[2]]['xpostag']]
                 sig0_deprel = dep_rel_train[train_data[s1[1]][s1[2]]['deprel']]
                 beta0_vec = glove_vec.get(word_data['lemma'])
@@ -127,15 +124,6 @@ for i, data in enumerate(train_data):
                     beta1_word = np.zeros((dimension)) if beta1_word is None else beta1_word
                 except:
                     beta1_word = np.zeros((dimension))
-                    # print("ok2")
-
-                # print(beta1_word, beta0_word)
-                # beta1_word = -1
-                # try:
-                #     beta1_word = vocab_train[train_data[i][j+1]['lemma']]
-                # except:
-                #     beta1_word = -1
-                # beta1_word = 0 if beta1_vec is None else norm(beta1_vec, ord=1)
                 
                 beta1_pos = -1
                 try:
@@ -159,31 +147,82 @@ for i, data in enumerate(train_data):
                 if leftArc(s1, s2):
                     rel.append((s2, s1))
                     stack.pop(-2)
+                    s2_deprel = dep_rel_train[train_data[s2[1]][s2[2]]['deprel']]
+                    dep_relations_labels.append(s2_deprel)
                     operation_labels.append(0)
+                    # print("left")
                 elif rightArc(s1, s2, i, j):
                     rel.append((s1, s2))
                     stack.pop()
+                    s1_deprel = dep_rel_train[train_data[s1[1]][s1[2]]['deprel']]
+                    dep_relations_labels.append(s1_deprel)
                     operation_labels.append(1)
+                    # print("right")
                 else:
                     stack.append((word_data['lemma'], i, j))
+                    dep_relations_labels.append(-1)
                     operation_labels.append(2)
+                    # print("shift")
                     break
                 
 
-    relations.append(rel)
+    # relations.append(rel)
 
-    # break
+    while(len(stack) > 1):
+
+        s1 = stack[-1]
+        for st in stack:
+            s2 = {}
+            if st == ("root", -1, -1):
+                s2 = {'id' : 0}
+            else:
+                s2 = train_data[st[1]][st[2]]
+            s1_head = train_data[s1[1]][s1[2]]['head']
+            if s2['id'] == s1_head:
+                rel.append((s1, st))
+                operation_labels.append(1)
+
+        # stack[-2]
+                stack_vec = glove_vec.get(s1[0])
+                sig0_word = np.zeros((dimension)) if stack_vec is None else stack_vec
+        
+                sig0_pos = pos_tags_train[train_data[s1[1]][s1[2]]['xpostag']]
+                sig0_deprel = dep_rel_train[train_data[s1[1]][s1[2]]['deprel']]
+        
+                beta0_word = np.zeros((dimension)) #if beta0_vec is None else beta0_vec
+                # beta0_word = vocab_train[word_data['lemma']]
+                beta0_pos = -1 #pos_tags_train[word_data['xpostag']]
+                beta0_deprel = -1 #dep_rel_train[word_data['deprel']]
+                beta1_word = np.zeros((dimension))
+            
+
+                beta1_pos = -1
+
+                beta1_deprel = -1
+
+                feat = np.array([sig0_deprel, beta0_deprel, sig0_pos, beta0_pos, beta1_pos,\
+                          beta1_deprel])
+                
+                feat = np.concatenate((feat, sig0_word, beta0_word, beta1_word))
+                features.append(feat)
+                s1_deprel = dep_rel_train[train_data[s1[1]][s1[2]]['deprel']]
+                dep_relations_labels.append(s1_deprel)
+
+        stack.pop()
+        
+    relations.append(rel)
 
 X_train = features
 Y_train = operation_labels
+Y_train_dep = dep_relations_labels
 # Y_train = np.array(pd.get_dummies(Y_train))
 
 features = []
 operation_labels = []
 stack = []
 relations = []
-# print(len(features), features[:3])
-# print(operation_labels)
+dep_relations_labels = []
+
 train_data = test_data
 
 vocab = set()
@@ -196,8 +235,6 @@ for data in train_data:
         deprel.add(word_data['deprel'])
 vocab.add("root")
 
-# vocab_train =  {voc:i  for i, voc in enumerate(vocab)}
-# pos_tags_train =  {tag:np.random.rand((5))  for i, tag in enumerate(pos_tags)}
 pos_tags_train =  {tag:i for i, tag in enumerate(pos_tags)}
 dep_rel_train =  {dep:i  for i, dep in enumerate(deprel)}
 # print(pos_tags)
@@ -221,9 +258,7 @@ for i, data in enumerate(train_data):
                 s1, s2 = stack[-1], stack[-2]
                 stack_vec = glove_vec.get(s1[0])
                 sig0_word = np.zeros((dimension)) if stack_vec is None else stack_vec
-                # print(sig0_word)
-                # print(s1[0])
-                # sig0_word = vocab_train[s1[0]]
+                
                 sig0_pos = pos_tags_train[train_data[s1[1]][s1[2]]['xpostag']]
                 sig0_deprel = dep_rel_train[train_data[s1[1]][s1[2]]['deprel']]
                 beta0_vec = glove_vec.get(word_data['lemma'])
@@ -239,13 +274,6 @@ for i, data in enumerate(train_data):
                     beta1_word = np.zeros((dimension))
                     # print("ok2")
 
-                # print(beta1_word, beta0_word)
-                # beta1_word = -1
-                # try:
-                #     beta1_word = vocab_train[train_data[i][j+1]['lemma']]
-                # except:
-                #     beta1_word = -1
-                # beta1_word = 0 if beta1_vec is None else norm(beta1_vec, ord=1)
                 
                 beta1_pos = -1
                 try:
@@ -261,32 +289,79 @@ for i, data in enumerate(train_data):
 
                 feat = np.array([sig0_deprel, beta0_deprel, sig0_pos, beta0_pos, beta1_pos,\
                           beta1_deprel])
-                # print(feat.shape)
-                # print(sig0_word.shape, beta0_word.shape, beta1_word.shape)
+                
                 feat = np.concatenate((feat, sig0_word, beta0_word, beta1_word))
                 features.append(feat)
-                
 
                 if leftArc(s1, s2):
                     rel.append((s2, s1))
                     stack.pop(-2)
+                    s2_deprel = dep_rel_train[train_data[s2[1]][s2[2]]['deprel']]
+                    dep_relations_labels.append(s2_deprel)
                     operation_labels.append(0)
+                    # print("left")
                 elif rightArc(s1, s2, i, j):
                     rel.append((s1, s2))
                     stack.pop()
+                    s1_deprel = dep_rel_train[train_data[s1[1]][s1[2]]['deprel']]
+                    dep_relations_labels.append(s1_deprel)
                     operation_labels.append(1)
+                    
                 else:
                     stack.append((word_data['lemma'], i, j))
+                    dep_relations_labels.append(-1)
                     operation_labels.append(2)
+                    
                     break
+
+    while(len(stack) > 1):
+
+        s1 = stack[-1]
+        for st in stack:
+            s2 = {}
+            if st == ("root", -1, -1):
+                s2 = {'id' : 0}
+            else:
+                s2 = train_data[st[1]][st[2]]
+            s1_head = train_data[s1[1]][s1[2]]['head']
+            if s2['id'] == s1_head:
+                rel.append((s1, st))
+                operation_labels.append(1)
+
+        
+                stack_vec = glove_vec.get(s1[0])
+                sig0_word = np.zeros((dimension)) if stack_vec is None else stack_vec
+        
+                sig0_pos = pos_tags_train[train_data[s1[1]][s1[2]]['xpostag']]
+                sig0_deprel = dep_rel_train[train_data[s1[1]][s1[2]]['deprel']]
+        
+                beta0_word = np.zeros((dimension)) #if beta0_vec is None else beta0_vec
                 
+                beta0_pos = -1 #pos_tags_train[word_data['xpostag']]
+                beta0_deprel = -1 #dep_rel_train[word_data['deprel']]
+                beta1_word = np.zeros((dimension))
+           
+        
+                beta1_pos = -1
 
-    relations.append(rel)
+                beta1_deprel = -1
 
+                feat = np.array([sig0_deprel, beta0_deprel, sig0_pos, beta0_pos, beta1_pos,\
+                          beta1_deprel])
+                
+                feat = np.concatenate((feat, sig0_word, beta0_word, beta1_word))
+                features.append(feat)
+                s1_deprel = dep_rel_train[train_data[s1[1]][s1[2]]['deprel']]
+                dep_relations_labels.append(s1_deprel)
+
+        stack.pop()
+    relations.append(rel)  
+ 
 
 X_test = features
 Y_test = operation_labels
-# Y_test = np.array(pd.get_dummies(Y_test))
+Y_test_dep = dep_relations_labels
+
 
 print("\nTotal processing time : ", time.time()-start_time)
 
@@ -294,7 +369,8 @@ print("Training...")
 # clf = MultinomialNB()
 # clf = LogisticRegression()
 # clf = svm.SVC(verbose=True)
-clf = MLPClassifier(learning_rate_init=0.001, learning_rate='adaptive', verbose=True, max_iter=500, hidden_layer_sizes=(100,))
+# clf = MLPClassifier(learning_rate_init=0.001, learning_rate='adaptive', verbose=True, max_iter=500, hidden_layer_sizes=5)
+clf = MLPClassifier(learning_rate_init=0.001, verbose=True, max_iter=50, hidden_layer_sizes=200)
 start_time = time.time()
 clf.fit(X_train, Y_train)
 print("Training completed in %d Seconds" % int(time.time()-start_time))
@@ -303,3 +379,18 @@ start_time = time.time()
 Y_pred = clf.predict(X_test)
 print("Testing completed in %d Seconds" % int(time.time()-start_time))
 print(accuracy_score(Y_test, Y_pred))
+
+print("Training for deprel...")
+# clf = MultinomialNB()
+# clf = LogisticRegression()
+# clf = svm.SVC(verbose=True)
+# clf = MLPClassifier(learning_rate_init=0.001, learning_rate='adaptive', verbose=True, max_iter=500, hidden_layer_sizes=5)
+clf = MLPClassifier(learning_rate_init=0.001, verbose=True, max_iter=50, hidden_layer_sizes=5)
+start_time = time.time()
+clf.fit(X_train, Y_train_dep)
+print("Training completed in %d Seconds" % int(time.time()-start_time))
+
+start_time = time.time()
+Y_pred = clf.predict(X_test)
+print("Testing completed in %d Seconds" % int(time.time()-start_time))
+print(accuracy_score(Y_test_dep, Y_pred))
